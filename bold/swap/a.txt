@@ -1,0 +1,28 @@
+const [fromToken, setFromToken] = useState("ETH");
+const [toToken, setToToken] = useState("BTC");
+const [amount, setAmount] = useState(1);
+const [swapRate, setSwapRate] = useState(null);
+
+useEffect(() => {
+  fetch(`/api/rates?from=fromToken   to={toToken}`)
+    .then((res) => res.json())
+    .then((data) => setSwapRate(data.rate));
+}, [fromToken, toToken]);
+
+return (
+  <div>
+    <h1>Crypto Swap</h1>
+    <select onChange={(e) => setFromToken(e.target.value)}>
+      <option>ETH</option>
+      <option>BTC</option>
+      <option>TRUMP</option>
+    </select>
+    <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} />
+    <select onChange={(e) => setToToken(e.target.value)}>
+      <option>BTC</option>
+      <option>ETH</option>
+      <option>SOL</option>
+    </select>
+    <p>Estimated: {amount * swapRate} {toToken}</p>
+  </div>
+);

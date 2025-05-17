@@ -1,0 +1,61 @@
+@PORT = http://localhost:3000/api
+@Json = application/json
+@formUrl =application/x-www-form-urlencoded
+@token =Bearer a
+
+
+### home
+GET http://localhost:3000
+Content-Type: {{Json}}
+
+### profile
+GET {{PORT}}/
+Content-Type: {{Json}}
+
+### user register
+ # @name register
+POST {{PORT}}/auth/register
+Content-Type: {{Json}}
+
+{
+    "email":"folly2810@gmail.com",
+    "password":"12345"
+}
+
+### user register
+ # @name login
+POST  {{PORT}}/auth/login
+Content-Type: {{Json}}
+
+{
+    "email":"folly2810@gmail.com",
+    "password":"12345"
+}
+
+###
+POST {{PORT}}/product/
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundarym9d0EsD6M8DFTiD8
+Authorization: {{token}}
+
+
+###
+GET  {{PORT}}/product
+
+###
+POST  {{PORT}}/cart/add_to_cart
+Content-Type: {{Json}}
+Authorization :{{token}}
+
+{
+  "productId":"67cdbf55e83801eb1d5834ee"
+}
+
+###
+DELETE  {{PORT}}/cart/67cdcfc0f23f882cab4975c8
+Content-Type: {{Json}}
+Authorization :{{token}}
+
+
+### Get me
+@access_token = {{login.response.body.access_token}}
+@access_token = {{register.response.body.access_token}}

@@ -1,0 +1,571 @@
+npm init -y
+npm install express mysql2 dotenv axios web3 ethers bullmq redis
+require("dotenv").config();
+const express = require("express");
+const swapRoutes = require("./routes/swapRoutes");
+const app = express();
+
+app.use(express.json());
+app.use("/api/swap", swapRoutes);
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+const mysql = require("mysql2");
+
+const pool = mysql.createPool(
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASS,
+  database: process.env.DB_NAME,
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
+);
+
+module.exports = pool.promise();
+
+*📌 Create database.sql*
+“sql
+CREATE TABLE swaps (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_wallet VARCHAR(100) NOT NULL,
+  from_token VARCHAR(100) NOT NULL,
+  to_token VARCHAR(100) NOT NULL,
+  amount DECIMAL(18,8) NOT NULL,
+  status ENUM('pending', 'completed', 'failed') DEFAULT 'pending',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+Step 3: Fetch Swap Prices*
+*📌 Create services/swapService.js*
+“js
+const axios = require("axios");
+
+const JUPITER_API = "https://quote-api.jup.ag/v6/quote";
+const ONEINCH_API = "https://api.1inch.io/v5.0/1/quote";
+
+async function getSolanaSwapPrice(fromMint, toMint, amount) 
+  const url = {JUPITER_API}?inputMint=fromMint   outputMint={toMint}&amount=amount   slippageBps=50;
+  const response = await axios.get(url);
+  return response.data;
+
+
+async function getEvmSwapPrice(fromToken, toToken, amount)
+const url = {ONEINCH_API}?fromTokenAddress=fromToken   toTokenAddress={toToken}&amount=${amount};
+  const response = await axios.get(url);
+  return response.data;
+}
+
+module.exports = { getSolanaSwapPrice, getEvmSwapPrice };
+const express = require("express");
+const { getSolanaSwapPrice, getEvmSwapPrice } = require("../services/swapService");
+
+const router = express.Router();
+
+// Fetch Solana Swap Price
+router.get("/solana", async (req, res) => {
+  const { from, to, amount } = req.query;
+  const price = await getSolanaSwapPrice(from, to, amount);
+  res.json(price);
+});
+
+// Fetch EVM Swap Price
+router.get("/evm", async (req, res) => {
+  const { from, to, amount } = req.query;
+  const price = await getEvmSwapPrice(from, to, amount);
+  res.json(price);
+});
+
+module.exports = router;
+
+Create services/swapProcessor.js*
+`js
+const db = require("../db");
+const { getSolanaSwapPrice, getEvmSwapPrice } = require("./swapService");
+
+async function processSwap(userWallet, fromToken, toToken, amount, chain) {
+  let swapDetails;
+  
+  if (chain === "solana") {
+    swapDetails = await getSolanaSwapPrice(fromToken, toToken, amount);
+  } else if (chain === "evm") {
+swapDetails = await getEvmSwapPrice(fromToken, toToken, amount);
+  } else {
+    throw new Error("Unsupported chain");
+  }
+// Insert into MySQL Database
+  await db.execute(
+    "INSERT INTO swaps (user_wallet, from_token, to_token, amount, status) VALUES (?, ?, ?, ?, 'pending')",
+    [userWallet, fromToken, toToken, amount]
+  );
+
+  return swapDetails;
+}
+
+module.exports = { processSwap };
+
+const { processSwap } = require("../services/swapProcessor");
+
+router.post("/", async (req, res) => {
+  const { userWallet, fromToken, toToken, amount, chain } = req.body;
+  try {
+    const swap = await processSwap(userWallet, fromToken, toToken, amount, chain);
+    res.json({ success: true, swap });
+  } catch (error) {
+    res.status(400).json({ success: false, message: error.message });
+  }
+});
+
+const Web3 = require("web3");
+const web3 = new Web3(process.env.ETH_RPC_URL);
+
+async function checkDeposits(userAddress) {
+  const balance = await web3.eth.getBalance(userAddress);
+  return web3.utils.fromWei(balance, "ether");
+}
+
+module.exports = { checkDeposits };
+
+
+---
+
+*🔥 Step 6: Automate Swaps with a Job Queue (BullMQ)*
+*📌 Install Redis & BullMQ*
+*📌 Create `queue/swapQueue.js`*
+“`js
+const  Queue, Worker  = require("bullmq");
+const redisConnection =  connection:  host: "localhost", port: 6379 ;
+const db = require("../db");
+
+const swapQueue = new Queue("swapQueue", redisConnection);
+
+new Worker("swapQueue", async (job) => 
+  console.log(`Processing swap for{job.data.userWallet}`);
+  await db.execute("UPDATE swaps SET status='completed' WHERE id=?", [job.data.id]);
+}, redisConnection);
+
+async function addToQueue(swap) {
+  await swapQueue.add("swap", swap);
+}
+
+module.exports = { addToQueue };
+npm install @axelar-network/axelarjs-sdk axios
+const axios = require("axios");
+const { AxelarAssetTransfer } = require("@axelar-network/axelarjs-sdk");
+
+const AXLAR_API = "https://testnet.api.axelar.dev"; // Change to mainnet for production
+
+async function getCrossChainSwapPrice(fromChain, toChain, fromToken, toToken, amount) {
+  const url = `AXLAR_API/quote?from={fromChain}&to=toChain   inputToken={fromToken}&outputToken=toToken   amount={amount}`;
+  const response = await axios.get(url);
+  return response.data;
+}
+
+async function executeCrossChainSwap(userWallet, fromChain, toChain, fromToken, toToken, amount) {
+  const axelar = new AxelarAssetTransfer({ environment: "testnet" });
+
+  const tx = await axelar.sendToken({
+    fromChain,
+    toChain,
+    destinationAddress: userWallet,
+    amount,
+    asset: fromToken,
+  });
+
+  return tx.transactionHash;
+}
+
+module.exports = { getCrossChainSwapPrice, executeCrossChainSwap };
+const express = require("express");
+const Swap = require("../models/Swap");
+const { getCrossChainSwapPrice, executeCrossChainSwap } = require("../services/axelarService");
+
+const router = express.Router();
+
+// Get cross-chain swap price
+router.get("/cross-chain", async (req, res) => {
+  try {
+    const { fromChain, toChain, fromToken, toToken, amount } = req.query;
+    const price = await getCrossChainSwapPrice(fromChain, toChain, fromToken, toToken, amount);
+    res.json(price);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// Execute cross-chain swap
+router.post("/cross-chain", async (req, res) => {
+  try {
+    const { userWallet, fromChain, toChain, fromToken, toToken, amount } = req.body;
+
+    const txHash = await executeCrossChainSwap(userWallet, fromChain, toChain, fromToken, toToken, amount);
+    res.json({ success: true, txHash });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+module.exports = router;
+npx create-react-app swap-platform
+cd swap-platform
+npm install axios web3 ethers @axelar-network/axelarjs-sdk
+import React, { useState } from "react";
+import axios from "axios";
+
+function App() {
+  const [fromChain, setFromChain] = useState("ethereum");
+  const [toChain, setToChain] = useState("solana");
+  const [fromToken, setFromToken] = useState("");
+  const [toToken, setToToken] = useState("");
+  const [amount, setAmount] = useState("");
+  const [price, setPrice] = useState(null);
+  const [transactionHash, setTransactionHash] = useState("");
+
+  const getSwapPrice = async () => {
+    try {
+      const response = await axios.get("http://localhost:5000/api/swap/cross-chain", {
+        params: { fromChain, toChain, fromToken, toToken, amount },
+      });
+      setPrice(response.data);
+    } catch (err) {
+      console.error("Error fetching price:", err);
+    }
+  };
+
+  const executeSwap = async () => {
+    try {
+      const response = await axios.post("http://localhost:5000/api/swap/cross-chain", {
+        userWallet: "YOUR_WALLET_ADDRESS",
+        fromChain,
+        toChain,
+        fromToken,
+        toToken,
+        amount,
+      });
+setTransactionHash(response.data.txHash);
+    } catch (err) {
+      console.error("Error executing swap:", err);
+    }
+  };
+
+  return (
+    <div style={{ padding: "20px" }}>
+      <h1>Crypto Swap Platform</h1>
+<div>
+        <label>From Chain:</label>
+        <select value={fromChain} onChange={(e) => setFromChain(e.target.value)}>
+          <option value="ethereum">Ethereum</option>
+          <option value="solana">Solana</option>
+          <option value="polygon">Polygon</option>
+        </select>
+      </div>
+
+      <div>
+        <label>To Chain:</label>
+        <select value={toChain} onChange={(e) => setToChain(e.target.value)}>
+          <option value="solana">Solana</option>
+          <option value="ethereum">Ethereum</option>
+          <option value="polygon">Polygon</option>
+        </select>
+      </div>
+
+      <div>
+        <label>From Token:</label>
+        <input type="text" value={fromToken} onChange={(e) => setFromToken(e.target.value)} />
+      </div>
+
+      <div>
+        <label>To Token:</label>
+        <input type="text" value={toToken} onChange={(e) => setToToken(e.target.value)} />
+      </div>
+
+      <div>
+        <label>Amount:</label>
+        <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} />
+      </div>
+<button onClick={getSwapPrice}>Get Swap Price</button>
+      <button onClick={executeSwap}>Execute Swap</button>
+
+      {price && (
+        <div>
+          <h3>Estimated Swap Price:</h3>
+          <pre>{JSON.stringify(price, null, 2)}</pre>
+        </div>
+      )}
+
+      {transactionHash && (
+        <div>
+          <h3>Transaction Hash:</h3>
+          <p>{transactionHash}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default App;
+
+const mongoose = require('mongoose');
+
+const UserSwapRequestSchema = new mongoose.Schema({
+  depositAddress: String,
+  targetChain: String,
+  sourceChain: String,
+  sourceToken: String,
+  targetToken: String,
+  amount: Number,
+  userReceiveAddress: String,
+status: { type: String, enum: ['pending', 'processing', 'completed', 'failed'], default: 'pending' },
+  scheduledAt: Date,
+  createdAt: { type: Date, default: Date.now },
+});
+
+module.exports = mongoose.model('UserSwapRequest', UserSwapRequestSchema);
+// POST /api/swap-request
+// Example payload: { sourceToken: "JUP", sourceChain: "solana", targetToken: "ETH", targetChain: "base", amount: 100, userReceiveAddress: "0xabc..." }
+
+app.post("/api/swap-request", async (req, res) => {
+  const { sourceToken, sourceChain, targetToken, targetChain, amount, userReceiveAddress } = req.body;
+
+  const depositAddress = await generateDepositAddress(sourceChain, sourceToken); // custom logic
+
+  const request = await UserSwapRequest.create({
+    depositAddress,
+    sourceToken,
+    sourceChain,
+    targetToken,
+    targetChain,
+    amount,
+    userReceiveAddress
+  });
+
+  // Return deposit address
+  res.json({ depositAddress, swapId: request._id });
+});
+
+// queues/swapQueue.js
+const Queue = require('bull');
+const swapQueue = new Queue('swap-process', 'redis://127.0.0.1:6379');
+
+// Add job when deposit confirmed
+swapQueue.add({
+  swapId: request._id,sourceToken,
+  targetToken,
+  amount,
+  userReceiveAddress
+});
+swapQueue.process(async (job) => {
+  const { swapId, sourceToken, targetToken, amount, userReceiveAddress } = job.data;
+
+  try {
+    // 1. Confirm funds received
+    // 2. Execute swap using on-chain tx or aggregator API
+    // 3. Send swapped token to userReceiveAddress
+
+    await sendTokenToUser(targetToken, targetChain, amountOut, userReceiveAddress);
+    await UserSwapRequest.findByIdAndUpdate(swapId, { status: 'completed' });
+  } catch (err) {
+    console.error(err);
+    await UserSwapRequest.findByIdAndUpdate(swapId, { status: 'failed' });
+  }
+});
+
+crypto-swap-platform/
+│── backend/
+│   ├── config/
+│   │   ├── db.js                # MongoDB Connection
+│   │   ├── redis.js             # Redis Connection for BullMQ
+│   │   ├── chains.js            # Blockchain configurations
+│   ├── controllers/
+│   │   ├── swapController.js    # Handles Swap Logic
+│   ├── models/
+│   │   ├── SwapRequest.js       # Swap Request Schema
+│   │   ├── Transaction.js       # Transaction History
+│   ├── queues/
+│   │   ├── swapQueue.js         # BullMQ Swap Queue
+│   │   ├── workers.js           # Worker to Process Swaps
+│   ├── routes/
+│   │   ├── swapRoutes.js        # API Routes
+│   ├── utils/
+│   │   ├── blockchainUtils.js   # Interact with blockchains
+│   │   ├── priceUtils.js        # Fetch exchange rates
+│   ├── server.js                # Main Express Server
+│── frontend/                     # (If needed) React Frontend
+│── .env                          # Environment Variables
+│── package.json
+│── README.md
+npm init -y
+npm install express mongoose dotenv bullmq ioredis axios ethers @solana/web3.js
+
+const mongoose = require("mongoose");
+
+const SwapRequestSchema = new mongoose.Schema({
+  depositAddress: String,
+  sourceChain: String,
+  targetChain: String,
+  sourceToken: String,
+  targetToken: String,
+  amount: Number,
+  userReceiveAddress: String,
+  status: { type: String, enum: ["pending", "processing", "completed", "failed"], default: "pending" },
+  createdAt: { type: Date, default: Date.now }
+});
+
+module.exports = mongoose.model("SwapRequest", SwapRequestSchema);
+const mongoose = require("mongoose");
+
+const SwapRequestSchema = new mongoose.Schema({
+  depositAddress: String,
+  sourceChain: String,
+  targetChain: String,
+  sourceToken: String,
+  targetToken: String,
+  amount: Number,
+  userReceiveAddress: String,
+  status: { type: String, enum: ["pending", "processing", "completed", "failed"], default: "pending" },
+  createdAt: { type: Date, default: Date.now }
+});
+
+module.exports = mongoose.model("SwapRequest", SwapRequestSchema);
+const SwapRequest = require("../models/SwapRequest");
+const swapQueue = require("../queues/swapQueue");
+const { generateDepositAddress } = require("../utils/blockchainUtils");
+
+exports.createSwap = async (req, res) => {
+  try {
+    const { sourceToken, sourceChain, targetToken, targetChain, amount, userReceiveAddress } = req.body;
+
+    // Generate a deposit address for the user
+    const depositAddress = await generateDepositAddress(sourceChain, sourceToken);
+
+    const swapRequest = await SwapRequest.create({
+      depositAddress,
+      sourceToken,
+      sourceChain,
+      targetToken,
+      targetChain,
+      amount,
+      userReceiveAddress
+    });
+
+    // Add to the queue for processing
+    await swapQueue.add("processSwap", { swapId: swapRequest._id });
+
+    res.json({ success: true, depositAddress, swapId: swapRequest._id });
+  } catch (error) {
+    res.status(500).json({ error: "Swap creation failed" });
+  }
+};
+
+const SwapRequest = require("../models/SwapRequest");
+const swapQueue = require("../queues/swapQueue");
+const { generateDepositAddress } = require("../utils/blockchainUtils");
+
+exports.createSwap = async (req, res) => {
+  try {
+    const { sourceToken, sourceChain, targetToken, targetChain, amount, userReceiveAddress } = req.body;
+
+    // Generate a deposit address for the user
+    const depositAddress = await generateDepositAddress(sourceChain, sourceToken);
+
+    const swapRequest = await SwapRequest.create({
+      depositAddress,
+      sourceToken,
+      sourceChain,
+      targetToken,
+      targetChain,
+      amount,
+      userReceiveAddress
+    });
+
+    // Add to the queue for processing
+    await swapQueue.add("processSwap", { swapId: swapRequest._id });
+
+    res.json({ success: true, depositAddress, swapId: swapRequest._id });
+  } catch (error) {
+    res.status(500).json({ error: "Swap creation failed" });
+  }
+};
+
+*queues/workers.js*
+`js
+const { Worker } = require("bullmq");
+const Redis = require("ioredis");
+const SwapRequest = require("../models/SwapRequest");
+const { processSwap } = require("../utils/blockchainUtils");
+
+const connection = new Redis(process.env.REDIS_URL);
+const swapWorker = new Worker("swapQueue", async (job) => {
+  const { swapId } = job.data;
+  const swapRequest = await SwapRequest.findById(swapId);
+
+  if (!swapRequest) throw new Error("Swap Request Not Found");
+
+  try {
+    await SwapRequest.findByIdAndUpdate(swapId, { status: "processing" });
+
+    // Execute the swap logic
+    await processSwap(swapRequest);
+
+    await SwapRequest.findByIdAndUpdate(swapId, { status: "completed" });
+  } catch (error) {
+    await SwapRequest.findByIdAndUpdate(swapId, { status: "failed" });
+  }
+}, { connection });
+
+console.log("Swap Worker Running...");
+
+const ethers = require("ethers");
+const { Connection, PublicKey } = require("@solana/web3.js");
+const axios = require("axios");
+
+// Simulated function to generate deposit address (replace with real implementation)
+async function generateDepositAddress(chain, token) {
+  if (chain === "ethereum") return ethers.Wallet.createRandom().address;
+if (chain === "solana") return new PublicKey(Buffer.alloc(32, 1)).toBase58();
+  throw new Error("Unsupported chain");
+}
+
+// Process Swap (Simulated)
+async function processSwap(swapRequest) {
+  const { sourceToken, targetToken, amount, userReceiveAddress } = swapRequest;
+
+  console.log(Processing swap: amount{sourceToken} → targetToken);
+
+  // Simulating a DEX swap (replace with real API like Jupiter or Uniswap)
+  const exchangeRate = await axios.get(https://api.dex.com/price?from={sourceToken}&to=targetToken);
+  const amountOut = amount * exchangeRate.data.price;
+
+  // Send swapped tokens to the user's address (fake function)
+  console.log(Sending{amountOut} targetToken to{userReceiveAddress});
+}
+
+module.exports = { generateDepositAddress, processSwap };
+
+import mongoose, { Schema, Document } from "mongoose";
+
+export interface ISwapRequest extends Document {
+  depositAddress: string;
+  sourceChain: string;
+  targetChain: string;
+  sourceToken: string;
+  targetToken: string;
+  amount: number;
+  userReceiveAddress: string;
+  status: "pending" | "processing" | "completed" | "failed";
+createdAt: Date;
+}
+
+const SwapRequestSchema: Schema = new Schema({
+  depositAddress: { type: String, required: true },
+  sourceChain: { type: String, required: true },
+  targetChain: { type: String, required: true },
+  sourceToken: { type: String, required: true },
+  targetToken: { type: String, required: true },
+  amount: { type: Number, required: true },
+  userReceiveAddress: { type: String, required: true },
+  status: { type: String, enum: ["pending", "processing", "completed", "failed"], default: "pending" },
+  createdAt: { type: Date, default: Date.now }
+});
+
+export default mongoose.model<ISwapRequest>("SwapRequest", SwapRequestSchema);

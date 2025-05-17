@@ -1,0 +1,8 @@
+{
+  "tokens": [
+    { "symbol": "ETH", "chain": "ethereum", "type": "native" },
+    { "symbol": "USDT", "chain": "tron", "type": "trc20", "contract": "..." },
+{ "symbol": "ATOM", "chain": "cosmos", "type": "native" },
+    { "symbol": "BTC", "chain": "bitcoin", "type": "native" }
+  ]
+}

@@ -1,0 +1,63 @@
+Great question. 🔍
+
+To use FFmpeg commands effectively (especially when building a video editor), you need to understand **FFmpeg's syntax** — and yes, there **is official documentation** and other reliable resources to learn from.
+
+---
+
+## 📚 FFmpeg Documentation & Learning Resources
+
+### 1. ✅ **Official FFmpeg Documentation**
+
+* 📌 Main site:
+  [https://ffmpeg.org/documentation.html](https://ffmpeg.org/documentation.html)
+
+* 🔧 Most useful sections:
+
+  * [FFmpeg CLI Documentation](https://ffmpeg.org/ffmpeg.html)
+  * [FFmpeg Filters Documentation](https://ffmpeg.org/ffmpeg-filters.html)
+  * [FFmpeg Codecs](https://ffmpeg.org/ffmpeg-codecs.html)
+
+---
+
+### 2. 📖 **Unofficial but Very Helpful Guides**
+
+* [FFmpeg Cheat Sheet (by Kapwing)](https://www.kapwing.com/resources/ffmpeg-commands-cheat-sheet/)
+* [FFmpeg Wiki](https://trac.ffmpeg.org/wiki)
+
+These explain common tasks like:
+
+* Trimming: `ffmpeg -ss 00:00:05 -to 00:00:10 -i input.mp4 -c copy output.mp4`
+* Extracting audio: `ffmpeg -i input.mp4 -vn -acodec copy output.mp3`
+* Concatenating: `ffmpeg -i input1.mp4 -i input2.mp4 -filter_complex "[0:v][0:a][1:v][1:a]concat=n=2:v=1:a=1[outv][outa]" -map "[outv]" -map "[outa]" output.mp4`
+
+---
+
+### 3. 🎥 **Test FFmpeg Commands in Terminal Before Coding**
+
+Use a terminal (on your PC or macOS/Linux) to test commands **before using them in React Native**:
+
+```bash
+ffmpeg -i input.mp4 -ss 00:00:05 -to 00:00:15 -c copy output.mp4
+```
+
+Once you're confident the command works, **pass the same command string to FFmpegKit** in React Native like this:
+
+```ts
+FFmpegKit.execute(`-i input.mp4 -ss 00:00:05 -to 00:00:15 -c copy output.mp4`);
+```
+
+---
+
+### 4. ✅ FFmpegKit Command Compatibility
+
+FFmpegKit (used in React Native) is a full FFmpeg wrapper, so:
+
+* Most standard FFmpeg commands **work as-is**
+* You **do not need to learn new syntax** for mobile — just make sure paths are correct (`file:///...`)
+
+📦 FFmpegKit docs:
+[https://github.com/tanersener/ffmpeg-kit](https://github.com/tanersener/ffmpeg-kit)
+
+---
+
+## 🔍 Tips

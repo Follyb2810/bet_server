@@ -1,0 +1,145 @@
+Step 2: Setup MySQL Database*
+*📌 Create db.js*
+“js
+const mysql = require("mysql2");
+
+const pool = mysql.createPool(
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASS,
+  database: process.env.DB_NAME,
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
+);
+
+module.exports = pool.promise();
+“
+
+*📌 Create database.sql*
+“sql
+CREATE TABLE swaps (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_wallet VARCHAR(100) NOT NULL,
+  from_token VARCHAR(100) NOT NULL,
+  to_token VARCHAR(100) NOT NULL,
+  amount DECIMAL(18,8) NOT NULL,
+  status ENUM('pending', 'completed', 'failed') DEFAULT 'pending',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+“
+
+—
+
+*🔥 Step 3: Fetch Swap Prices*
+*📌 Create services/swapService.js*
+“js
+const axios = require("axios");
+
+const JUPITER_API = "https://quote-api.jup.ag/v6/quote";
+const ONEINCH_API = "https://api.1inch.io/v5.0/1/quote";
+
+async function getSolanaSwapPrice(fromMint, toMint, amount) 
+  const url = {JUPITER_API}?inputMint=fromMint   outputMint={toMint}&amount=amount   slippageBps=50;
+  const response = await axios.get(url);
+  return response.data;
+
+
+async function getEvmSwapPrice(fromToken, toToken, amount)
+const url = {ONEINCH_API}?fromTokenAddress=fromToken   toTokenAddress={toToken}&amount=${amount};
+  const response = await axios.get(url);
+  return response.data;
+}
+
+module.exports = { getSolanaSwapPrice, getEvmSwapPrice };
+``
+const express = require("express");
+const { getSolanaSwapPrice, getEvmSwapPrice } = require("../services/swapService");
+
+const router = express.Router();
+
+// Fetch Solana Swap Price
+router.get("/solana", async (req, res) => {
+  const { from, to, amount } = req.query;
+  const price = await getSolanaSwapPrice(from, to, amount);
+  res.json(price);
+});
+
+// Fetch EVM Swap Price
+router.get("/evm", async (req, res) => {
+  const { from, to, amount } = req.query;
+  const price = await getEvmSwapPrice(from, to, amount);
+  res.json(price);
+});
+
+module.exports = router;
+Step 4: Process Swap Transactions*
+*📌 Create services/swapProcessor.js*
+`js
+const db = require("../db");
+const { getSolanaSwapPrice, getEvmSwapPrice } = require("./swapService");
+
+async function processSwap(userWallet, fromToken, toToken, amount, chain) {
+  let swapDetails;
+  
+  if (chain === "solana") {
+    swapDetails = await getSolanaSwapPrice(fromToken, toToken, amount);
+  } else if (chain === "evm") {
+swapDetails = await getEvmSwapPrice(fromToken, toToken, amount);
+  } else {
+    throw new Error("Unsupported chain");
+  }
+// Insert into MySQL Database
+  await db.execute(
+    "INSERT INTO swaps (user_wallet, from_token, to_token, amount, status) VALUES (?, ?, ?, ?, 'pending')",
+    [userWallet, fromToken, toToken, amount]
+  );
+
+  return swapDetails;
+}
+
+module.exports = { processSwap };
+const { processSwap } = require("../services/swapProcessor");
+
+router.post("/", async (req, res) => {
+  const { userWallet, fromToken, toToken, amount, chain } = req.body;
+  try {
+    const swap = await processSwap(userWallet, fromToken, toToken, amount, chain);
+    res.json({ success: true, swap });
+  } catch (error) {
+    res.status(400).json({ success: false, message: error.message });
+  }
+});
+const Web3 = require("web3");
+const web3 = new Web3(process.env.ETH_RPC_URL);
+
+async function checkDeposits(userAddress) {
+  const balance = await web3.eth.getBalance(userAddress);
+  return web3.utils.fromWei(balance, "ether");
+}
+
+module.exports = { checkDeposits };
+
+
+---
+
+*🔥 Step 6: Automate Swaps with a Job Queue (BullMQ)*
+*📌 Install Redis & BullMQ*
+*📌 Create `queue/swapQueue.js`*
+“`js
+const  Queue, Worker  = require("bullmq");
+const redisConnection =  connection:  host: "localhost", port: 6379 ;
+const db = require("../db");
+
+const swapQueue = new Queue("swapQueue", redisConnection);
+
+new Worker("swapQueue", async (job) => 
+  console.log(`Processing swap for{job.data.userWallet}`);
+  await db.execute("UPDATE swaps SET status='completed' WHERE id=?", [job.data.id]);
+}, redisConnection);
+
+async function addToQueue(swap) {
+  await swapQueue.add("swap", swap);
+}
+
+module.exports = { addToQueue };
